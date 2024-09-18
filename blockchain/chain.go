@@ -10,9 +10,17 @@ import (
 )
 
 type blockchain struct {
-	NewestHash string `json:"newestHash"`
-	Height     int    `json:"height"`
+	NewestHash        string `json:"newestHash"`
+	Height            int    `json:"height"`
+	CurrentDifficulty int    `json:"currentDifficulty"`
 }
+
+const (
+	defaultDifficulty  = 2
+	difficultyInterval = 5
+	blockInterval      = 2
+	allowedRange       = 2
+)
 
 var b *blockchain
 var once sync.Once
@@ -48,10 +56,37 @@ func (b *blockchain) Blocks() []*Block {
 	return blocks
 }
 
+func (b *blockchain) recalculateDifficulty() int {
+	allBlocks := b.Blocks()
+	newestBlock := allBlocks[0]
+	lastRecalculateBlock := allBlocks[difficultyInterval-1]
+	actualTime := (newestBlock.Timestamp / 60) - (lastRecalculateBlock.Timestamp / 60)
+	expectedTime := difficultyInterval * blockInterval
+	if actualTime <= (expectedTime - allowedRange) {
+		return b.CurrentDifficulty + 1
+	}
+	if actualTime >= (expectedTime + allowedRange) {
+		return b.CurrentDifficulty - 1
+	}
+	return b.CurrentDifficulty
+}
+
+func (b *blockchain) difficulty() int {
+	if b.Height == 0 {
+		return defaultDifficulty
+	}
+	if b.Height%difficultyInterval == 0 {
+		return b.recalculateDifficulty()
+	}
+	return b.CurrentDifficulty
+}
+
 func Blockchain() *blockchain {
 	if b == nil {
 		once.Do(func() {
-			b = &blockchain{"", 0}
+			b = &blockchain{
+				Height: 0,
+			}
 			checkpoint := db.CheckPoint()
 			if checkpoint == nil {
 				b.AddBlock("Genesis")
